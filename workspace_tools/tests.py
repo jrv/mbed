@@ -693,6 +693,13 @@ TESTS = [
         "host_test": "udp_link_layer_auto.py",
         "peripherals": ["ethernet"],
     },
+    {
+        "id": "tftpserver", "description": "TFTP server",
+        "source_dir": join(TEST_DIR, "net", "protocols", "TFTPSERVER"),
+        "dependencies": [MBED_LIBRARIES, RTOS_LIBRARIES, ETH_LIBRARY],
+        "automated": False,
+        "peripherals": ["ethernet"]
+    },
 
     # u-blox tests
     {
