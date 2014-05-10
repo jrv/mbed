@@ -696,7 +696,7 @@ TESTS = [
     {
         "id": "tftpserver", "description": "TFTP server",
         "source_dir": join(TEST_DIR, "net", "TFTPSERVER"),
-        "dependencies": [MBED_LIBRARIES, RTOS_LIBRARIES, ETH_LIBRARY, TEST_MBED_LIB],
+        "dependencies": [MBED_LIBRARIES, RTOS_LIBRARIES, ETH_LIBRARY, TEST_MBED_LIB, SD_FS, FAT_FS],
         "automated": False,
         "peripherals": ["ethernet"]
     },

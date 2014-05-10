@@ -3,6 +3,7 @@
 #include "mbed.h"
 #include "cmsis_os.h"
 #include "EthernetInterface.h"
+#include "SDFileSystem.h"
 
 const int TFTP_SERVER_PORT = 69;
 const int BUFFER_SIZE = 592;
@@ -11,23 +12,33 @@ DigitalOut led1(LED1);
 DigitalOut led2(LED2);
 
 void tftpthread(void const *args);
+void sd_writefile(const char *filename);
+void sd_readfile(const char *filename);
+
 osThreadDef(tftpthread, osPriorityNormal, DEFAULT_STACK_SIZE);
 
 LocalFileSystem local("local");   //File System
+SDFileSystem sd(p11, p12, p13, p14, "sd");
 EthernetInterface eth;
 UDPSocket server;
 
-int main (void) {
+const int DATA_SIZE = 256;
 
+int main (void) {
     eth.init(); //Use DHCP
     eth.connect();
     server.bind(TFTP_SERVER_PORT);
     printf("TFTP Server listening on IP Address %s port %d\n\r", eth.getIPAddress(), TFTP_SERVER_PORT);
 
     osThreadCreate(osThread(tftpthread), NULL);
+    const char *filename = "/sd/out.txt";
+
     while (true) {
         led1 = !led1;
-        osDelay(500);
+        osDelay(2500);
+        sd_writefile(filename);
+        osDelay(1000);
+        sd_readfile(filename);
     }
 }
 
@@ -125,4 +136,30 @@ void tftpthread(void const *args) {
     }
 }
 
+void sd_writefile(const char *filename) {
+    extern SDFileSystem sd;
+    FILE *f = fopen(filename, "w");
+    printf("SD: Writing ... ");
+    if (f != NULL) {
+        for (int i = 0; i < DATA_SIZE; i++)
+            fprintf(f, "%c", rand() % 0XFF);
+        printf("[OK]\r\n");
+        fclose(f);
+    } else {
+        printf("[FAILED]\r\n");
+    }
+}
 
+void sd_readfile(const char *filename) {
+    extern SDFileSystem sd;
+    uint8_t data;
+    printf("SD: Reading ...");
+    FILE *f = fopen(filename, "r");
+    if (f != NULL) {
+        while (! feof(f)) data = fgetc(f);
+        printf("[OK]\r\n");
+        fclose(f);
+    } else {
+        printf("[FAILED]\r\n");
+    }
+}
