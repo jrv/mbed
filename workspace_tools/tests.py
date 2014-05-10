@@ -700,6 +700,13 @@ TESTS = [
         "automated": False,
         "peripherals": ["ethernet"]
     },
+    {
+        "id": "laser", "description": "LaOS laser",
+        "source_dir": join(TEST_DIR, "laser"),
+        "dependencies": [MBED_LIBRARIES, RTOS_LIBRARIES, ETH_LIBRARY, TEST_MBED_LIB, SD_FS, FAT_FS],
+        "automated": False,
+        "peripherals": ["ethernet", "SD"]
+    },
 
     # u-blox tests
     {
