@@ -3,7 +3,7 @@
 #include "mbed.h"
 #include "cmsis_os.h"
 #include "EthernetInterface.h"
-#include "SDFileSystem.h"
+#include "laosfilesystem.h"
 
 const int TFTP_SERVER_PORT = 69;
 const int BUFFER_SIZE = 592;
@@ -11,42 +11,28 @@ enum TFTPState { idle, receiving } tftpState = idle;
 DigitalOut led1(LED1);
 DigitalOut led2(LED2);
 
-void tftpthread(void const *args);
-void sd_writefile(const char *filename);
-void sd_readfile(const char *filename);
+void diskiothread(void const *args);
+void sd_writefile(char *filename);
+void sd_readfile(char *filename);
 
-osThreadDef(tftpthread, osPriorityNormal, DEFAULT_STACK_SIZE);
+//LocalFileSystem local("local");   //File System
+// SDFileSystem sd(p11, p12, p13, p14, "sd");
+LaosFileSystem sd(p11, p12, p13, p14, "sd");
 
-LocalFileSystem local("local");   //File System
-SDFileSystem sd(p11, p12, p13, p14, "sd");
 EthernetInterface eth;
 UDPSocket server;
+osThreadDef(diskiothread, osPriorityNormal, DEFAULT_STACK_SIZE*2);
 
 const int DATA_SIZE = 256;
 
 int main (void) {
+    extern LaosFileSystem sd;
     eth.init(); //Use DHCP
     eth.connect();
     server.bind(TFTP_SERVER_PORT);
     printf("TFTP Server listening on IP Address %s port %d\n\r", eth.getIPAddress(), TFTP_SERVER_PORT);
+    server.set_blocking(false,1); // Set non-blocking
 
-    osThreadCreate(osThread(tftpthread), NULL);
-    const char *filename = "/sd/out.txt";
-
-    while (true) {
-        led1 = !led1;
-        osDelay(2500);
-        sd_writefile(filename);
-        osDelay(1000);
-        sd_readfile(filename);
-    }
-}
-
-void tftpthread(void const *args) {
-    extern LocalFileSystem local;
-    extern UDPSocket server;
-    extern DigitalOut led2;
-    extern TFTPState tftpState;
     char buffer[BUFFER_SIZE] = {0};
     char ack[4]; ack[0] = 0x00; ack[1] = 0x04; ack[2] = 0x00; ack[3] = 0x00;
     char filename[32], mode[6], errmsg[32];
@@ -55,7 +41,9 @@ void tftpthread(void const *args) {
     FILE *fp = NULL;
     short int timeout = 0;
 
-    server.set_blocking(false,1); // Set non-blocking
+    osThreadCreate(osThread(diskiothread), NULL);
+    
+
     while (true) {
         int n = server.receiveFrom(client, buffer, sizeof(buffer));
         if (n > 0) {
@@ -65,19 +53,20 @@ void tftpthread(void const *args) {
             if (tftpState == idle) {
                 if (buffer[1] == 0x02) {    // 0x02 means "request to write file"
                     printf("Received WRQ, %d bytes\n\r", n);
-                    snprintf(filename, 32, "/local/%s", &buffer[2]); // filename starts at byte 2
-                    snprintf(mode, 6, "%s", &buffer[3+strlen(filename)-7]); // mode is after filename
+                    snprintf(filename, 32, "%s", &buffer[2]); // filename starts at byte 2
+                    snprintf(mode, 6, "%s", &buffer[3+strlen(filename)]); // mode is after filename
                     printf("Received WRQ for file %s, mode %s.\n\r", filename, mode);
                     if (strcmp(mode, "octet") == 0) { // we only support octet/binary mode!
-                        fp = fopen(filename, "wb");
+                        tftpState = receiving;
+                        fp = sd.openfile(filename, "wb");
                         if (fp == NULL) {
                             printf("Error opening file %s\n\r", filename);
                             snprintf(errmsg, 32, "%c%c%c%cError opening file %s",ack[0], 0x05, ack[2], ack[3], filename);
                             server.sendTo(client, errmsg, strlen(errmsg));
+                            tftpState  = idle;
                             led2 = !led2;
-                        }
-                        else {
-                            tftpState = receiving;
+                        } else {
+                            printf("Receiving file opened\n\r");
                             ack[1] = 0x04;
                             server.sendTo(client, ack, 4);
                             led2 = !led2;
@@ -136,9 +125,24 @@ void tftpthread(void const *args) {
     }
 }
 
-void sd_writefile(const char *filename) {
-    extern SDFileSystem sd;
-    FILE *f = fopen(filename, "w");
+void diskiothread(void const *args) {
+    extern TFTPState tftpState;
+    extern DigitalOut led1;
+    char file[] = "out.txt";
+    char *filename;
+    filename = file;
+    while (true) {
+        led1 = !led1;
+        osDelay(2500);
+        if (tftpState == idle) sd_writefile(filename);
+        osDelay(1000);
+        if (tftpState == idle) sd_readfile(filename);
+    }
+}
+
+void sd_writefile(char *filename) {
+    extern LaosFileSystem sd;
+    FILE *f = sd.openfile(filename, "w");
     printf("SD: Writing ... ");
     if (f != NULL) {
         for (int i = 0; i < DATA_SIZE; i++)
@@ -150,11 +154,11 @@ void sd_writefile(const char *filename) {
     }
 }
 
-void sd_readfile(const char *filename) {
-    extern SDFileSystem sd;
+void sd_readfile(char *filename) {
+    extern LaosFileSystem sd;
     uint8_t data;
     printf("SD: Reading ...");
-    FILE *f = fopen(filename, "r");
+    FILE *f = sd.openfile(filename, "r");
     if (f != NULL) {
         while (! feof(f)) data = fgetc(f);
         printf("[OK]\r\n");
